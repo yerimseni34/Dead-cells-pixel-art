@@ -120,3 +120,34 @@ test('sheet paketleme frame konumlarını korur', () => {
   assert.equal(s.data[4 * 4], 1);
   assert.equal(s.data[6 * 4 + 3], 0);
 });
+
+import { reduceFlicker } from '../src/pixel.js';
+
+function solid(w, h, at) {
+  const color = new Uint8ClampedArray(w * h * 4), normal = new Uint8ClampedArray(w * h * 4);
+  for (let p = 0; p < w * h; p++) { color.set([...at(p % w, (p / w) | 0), 255], p * 4); normal.set([128, 128, 255, 255], p * 4); }
+  return { w, h, color, normal };
+}
+const RED = [200, 0, 0], BLUE = [0, 0, 200];
+
+test('titreme azaltma tek frame\'lik tek piksel sıçramayı düzeltir', () => {
+  const a = solid(5, 5, () => RED);
+  const b = solid(5, 5, (x, y) => (x === 2 && y === 2 ? BLUE : RED));
+  const out = reduceFlicker([a, b, a], false);
+  assert.deepEqual(Array.from(out[1].color.slice((2 * 5 + 2) * 4, (2 * 5 + 2) * 4 + 3)), RED);
+  assert.equal(out[0], a);
+});
+
+test('titreme azaltma büyük değişikliği (gerçek hareket) korur', () => {
+  const a = solid(5, 5, () => RED);
+  const b = solid(5, 5, (x, y) => (y === 2 ? BLUE : RED)); // boydan boya çizgi, örn. kılıç
+  const out = reduceFlicker([a, b, a], false);
+  for (let x = 1; x < 4; x++) assert.deepEqual(Array.from(out[1].color.slice((2 * 5 + x) * 4, (2 * 5 + x) * 4 + 3)), BLUE);
+});
+
+test('titreme azaltma kalıcı değişikliğe dokunmaz', () => {
+  const a = solid(3, 3, () => RED);
+  const b = solid(3, 3, (x, y) => (x === 1 && y === 1 ? BLUE : RED));
+  const out = reduceFlicker([a, b, b], false);
+  assert.equal(out[1], b);
+});

@@ -3,7 +3,7 @@ import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { Capturer } from './capture.js';
 import { createDemoCharacter } from './demo.js';
 import { buildHistogram, quantizeHistogram, makeMatcher } from './palette.js';
-import { processFrame, packSheet } from './pixel.js';
+import { processFrame, packSheet, reduceFlicker } from './pixel.js';
 import { hexToRgb, rgbToHex, parsePalette } from './color.js';
 
 const $ = (id) => document.getElementById(id);
@@ -26,7 +26,7 @@ const state = {
 const CAPTURE_IDS = ['charHeight', 'fps', 'yaw', 'pitch', 'flatNormals'];
 const PROCESS_IDS = ['paletteMode', 'colorCount', 'customPalette', 'bake', 'steps', 'lightAngle', 'lightHeight',
   'contrast', 'hueShift', 'outline', 'outlineColor', 'outlineColored', 'innerLines', 'innerThreshold',
-  'cleanSilhouette', 'cleanColors', 'columns'];
+  'cleanSilhouette', 'cleanColors', 'deflicker', 'columns'];
 
 const num = (id) => parseFloat($(id).value);
 const on = (id) => $(id).checked;
@@ -63,6 +63,7 @@ function recapture() {
   const list = clips.length ? clips : [null];
   state.raw = list.map((clip) => ({
     clip,
+    loop: included.find((c) => c.clip === clip)?.loop ?? true,
     name: clip ? clip.name : 'pose',
     frames: capturer.sampleTimes(clip, fps).map((t) => capturer.captureFrame(clip, t, on('flatNormals'))),
   }));
@@ -80,7 +81,10 @@ function reprocess() {
   state.ctx = { palette: state.palette, match, finalMatch: locked ? match : null };
 
   const opts = processOptions();
-  state.final = state.raw.map((c) => ({ ...c, frames: c.frames.map((f) => processFrame(f, opts, state.ctx)) }));
+  state.final = state.raw.map((c) => {
+    const frames = c.frames.map((f) => processFrame(f, opts, state.ctx));
+    return { ...c, frames: on('deflicker') ? reduceFlicker(frames, c.loop) : frames };
+  });
   drawSwatches();
   drawSheets();
   updateInfo();
@@ -154,7 +158,10 @@ function tick(now) {
 // ---------- model yükleme ----------
 function setModel(root, clips, label) {
   capturer.setModel(root, clips);
-  state.clipStates = clips.map((clip) => ({ clip, include: true }));
+  // Tek seferlik hareketler (saldırı, zıplama, ölüm...) varsayılan olarak döngüsüz
+  const oneShot = /attack|atk|hit|hurt|die|death|dead|jump|land|roll|dodge|slash|shoot|cast/i;
+  state.clipStates = clips.map((clip) => ({ clip, include: true, loop: !oneShot.test(clip.name || '') }));
+  renderPartList();
   state.current = 0;
   $('modelInfo').textContent = `${label} · ${clips.length} animasyon`;
   renderClipList();
@@ -174,8 +181,37 @@ function renderClipList() {
     name.textContent = cs.clip.name || `clip_${i}`;
     const dur = document.createElement('small');
     dur.textContent = `${cs.clip.duration.toFixed(2)} sn`;
-    row.append(cb, name, dur);
+    const loop = document.createElement('label');
+    loop.className = 'loop';
+    loop.title = "Unity'de döngülü oynat";
+    const loopCb = document.createElement('input');
+    loopCb.type = 'checkbox'; loopCb.checked = cs.loop;
+    loopCb.onclick = (e) => { e.stopPropagation(); cs.loop = loopCb.checked; schedule(recapture); };
+    loop.onclick = (e) => e.stopPropagation();
+    loop.append(loopCb, '↻');
+    row.append(cb, name, dur, loop);
     row.onclick = () => { state.current = i; renderClipList(); };
+    return row;
+  }));
+}
+
+function renderPartList() {
+  const meshes = capturer.meshes;
+  $('partsSection').hidden = meshes.length < 2;
+  // İsimli parça varsa yalnızca onları listele (isimsizler genelde gövdenin alt parçaları)
+  const named = meshes.filter((m) => m.name);
+  $('parts').replaceChildren(...(named.length ? named : meshes).map((mesh, i) => {
+    const row = document.createElement('label');
+    row.className = 'check';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.checked = mesh.visible;
+    cb.oninput = () => {
+      // en az bir parça görünür kalmalı
+      if (!cb.checked && meshes.filter((m) => m.visible).length === 1) { cb.checked = true; return; }
+      mesh.visible = cb.checked;
+      schedule(recapture);
+    };
+    row.append(cb, mesh.name || mesh.material?.name || `parça ${i + 1}`);
     return row;
   }));
 }
@@ -229,7 +265,7 @@ function buildExport() {
     pixelsPerUnit: num('unityPPU'),
     shadingBaked: on('bake'),
     clips: state.final.map((c) => {
-      const entry = { name: c.name, start, count: c.frames.length, fps: num('fps'), loop: true };
+      const entry = { name: c.name, start, count: c.frames.length, fps: num('fps'), loop: c.loop };
       start += c.frames.length;
       return entry;
     }),

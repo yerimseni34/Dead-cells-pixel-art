@@ -23,7 +23,13 @@
     <section>
       <h2>Animasyonlar</h2>
       <div id="clips"></div>
-      <p class="hint">Kutucuk: sheet'e dahil et. İsme tıkla: önizle.</p>
+      <p class="hint">Kutucuk: sheet'e dahil et. İsme tıkla: önizle. ↻: Unity'de döngülü olsun.</p>
+    </section>
+
+    <section id="partsSection" hidden>
+      <h2>Parçalar</h2>
+      <div id="parts"></div>
+      <p class="hint">Silah, zırh gibi parçaları kapatıp aynı animasyonu farklı ekipmanla export edebilirsin.</p>
     </section>
 
     <section>
@@ -79,6 +85,8 @@
       <label class="check"><input type="checkbox" id="cleanSilhouette" checked /> Yetim pikselleri sil / delikleri kapat</label>
       <label class="check"><input type="checkbox" id="cleanColors" /> Tek piksellik renk lekelerini sil</label>
       <p class="hint">İkincisi 1 px'lik göz gibi detayları da silebilir.</p>
+      <label class="check"><input type="checkbox" id="deflicker" /> Titreme azalt (deneysel)</label>
+      <p class="hint">Tek frame'lik renk sıçramalarını önceki frame'e eşitler.</p>
     </section>
 
     <section>

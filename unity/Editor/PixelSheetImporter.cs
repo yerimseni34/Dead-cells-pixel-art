@@ -32,6 +32,7 @@ public static class PixelSheetImporter
         public int frameCount;
         public Pivot pivot;
         public float pixelsPerUnit;
+        public bool shadingBaked;
         public ClipInfo[] clips;
     }
 
@@ -174,8 +175,25 @@ public static class PixelSheetImporter
             created++;
         }
 
+        // --- Gölge sprite'a gömülmediyse: kademeli ışık materyali ---
+        string materialNote = string.Empty;
+        if (!meta.shadingBaked)
+        {
+            var toonShader = Shader.Find("PixelSheet/Toon Sprite Lit");
+            string materialPath = $"{dir}/{meta.name}_toon.mat";
+            if (toonShader == null)
+            {
+                Debug.LogWarning("Pixel Sheet: 'PixelSheet/Toon Sprite Lit' shader'ı projede yok; PixelToonSpriteLit.shader dosyasını Assets altına kopyala.");
+            }
+            else if (AssetDatabase.LoadAssetAtPath<Material>(materialPath) == null)
+            {
+                AssetDatabase.CreateAsset(new Material(toonShader), materialPath);
+                materialNote = $" SpriteRenderer'a '{meta.name}_toon' materyalini ata.";
+            }
+        }
+
         AssetDatabase.SaveAssets();
-        Debug.Log($"Pixel Sheet: '{meta.name}' içe aktarıldı ({rects.Count} sprite, {created} animasyon klibi).");
+        Debug.Log($"Pixel Sheet: '{meta.name}' içe aktarıldı ({rects.Count} sprite, {created} animasyon klibi).{materialNote}");
     }
 
     static void ApplyPixelSettings(TextureImporter importer)

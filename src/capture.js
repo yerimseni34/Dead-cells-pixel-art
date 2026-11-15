@@ -91,6 +91,7 @@ export class Capturer {
     const v = new THREE.Vector3();
     const view = this.camera.matrixWorldInverse;
     for (const mesh of this.meshes) {
+      if (!mesh.visible) continue;
       const pos = mesh.geometry.attributes.position;
       const stride = Math.max(1, Math.floor(pos.count / 4000));
       for (let i = 0; i < pos.count; i += stride) {

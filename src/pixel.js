@@ -166,6 +166,46 @@ export function processFrame(raw, opts, ctx) {
   return { w, h, color, normal: outNormal };
 }
 
+/**
+ * Titreme azaltma: bir piksel tek bir frame için renk değiştirip hemen eski rengine dönüyorsa
+ * (A -> B -> A) ve bu değişiklik küçük bir lekeyse, o frame'de de A yapılır.
+ * Yalnızca üç frame'de de opak olan piksellere dokunur; siluet (hareket) değişmez.
+ * Büyük değişiklikler (örn. gövdenin önünden geçen kılıç) korunur.
+ */
+export function reduceFlicker(frames, loop) {
+  const count = frames.length;
+  if (count < 3) return frames;
+  const { w, h } = frames[0];
+  const same = (a, b, i) => a[i] === b[i] && a[i + 1] === b[i + 1] && a[i + 2] === b[i + 2];
+  return frames.map((cur, t) => {
+    if (!loop && (t === 0 || t === count - 1)) return cur;
+    const prev = frames[(t - 1 + count) % count], next = frames[(t + 1) % count];
+    const blip = new Uint8Array(w * h);
+    for (let p = 0; p < w * h; p++) {
+      const i = p * 4;
+      if (cur.color[i + 3] && prev.color[i + 3] && next.color[i + 3] &&
+          same(prev.color, next.color, i) && !same(cur.color, prev.color, i)) blip[p] = 1;
+    }
+    let color = null, normal = null;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const p = y * w + x;
+        if (!blip[p]) continue;
+        let around = 0;
+        for (let d = 0; d < 4; d++) {
+          const nx = x + DX[d], ny = y + DY[d];
+          if (nx >= 0 && ny >= 0 && nx < w && ny < h && blip[ny * w + nx]) around++;
+        }
+        if (around > 1) continue; // büyük bir şeklin parçası: gerçek hareket
+        color ??= new Uint8ClampedArray(cur.color);
+        normal ??= new Uint8ClampedArray(cur.normal);
+        for (let k = 0; k < 4; k++) { color[p * 4 + k] = prev.color[p * 4 + k]; normal[p * 4 + k] = prev.normal[p * 4 + k]; }
+      }
+    }
+    return color ? { ...cur, color, normal } : cur;
+  });
+}
+
 /** Frame'leri ızgara halinde tek bir RGBA sheet'e dizer. */
 export function packSheet(frames, key, columns) {
   const { w, h } = frames[0];

@@ -47,8 +47,33 @@ Sonucun kalitesini en çok model belirler:
 ## İki gölge modu
 
 - **Gölgeyi sprite'a göm (açık):** Gölge sprite'ın içinde, Unity'de ek kurulum gerekmez.
-- **Kapalı:** Sprite düz renk çıkar, gölgeyi Unity'nin 2D ışıkları normal map'ten hesaplar (Dead Cells'in yolu).
+- **Kapalı:** Sprite düz renk çıkar, gölgeyi oyun her karede normal map'ten hesaplar (Dead Cells'in yolu).
   "Işık simülasyonu" görünümü bunun nasıl duracağını gösterir.
+
+### Unity'de kademeli (toon) dinamik ışık
+
+`unity/Shaders/PixelToonSpriteLit.shader` URP 2D ışıklarını alıp birkaç tona yuvarlar; ışık her
+sprite pikselinin merkezinden okunduğu için bantlar piksel sınırlarına oturur. Gereken: **Unity 6, URP, 2D Renderer**.
+
+1. Shader dosyasını projende `Assets/` altında bir yere kopyala.
+2. Araçta "Gölgeyi sprite'a göm"ü **kapat**, export et, Unity'de `.json` → **Pixel Sheet > Import**.
+   İçe aktarıcı `isim_toon.mat` materyalini kendisi oluşturur.
+3. SpriteRenderer'ın materyaline `isim_toon`'u ata.
+4. Sahneye bir **Global Light 2D** (düşük şiddet, ortam ışığı) ve bir **Point/Spot Light 2D** ekle.
+   Point ışıkta **Normal Maps > Quality: Fast** (ya da Accurate) seç; **Distance** değeri ışığın sprite'tan ne kadar "önde" durduğunu belirler.
+5. Materyalde ton kademesi, en koyu ton ve gölge rengini ayarla.
+
+## Ekipman ve varyasyonlar
+
+Modelde birden fazla mesh varsa **Parçalar** bölümünde listelenir. Silahı, zırhı ya da pelerini
+kapatıp aynı animasyonları farklı isimle yeniden export ederek ekipman varyasyonları üretebilirsin.
+Blender'da her ekipmanı ayrı, isimli bir obje olarak aynı iskelete bağlaman yeterli.
+
+## Titreme azaltma
+
+"Titreme azalt" seçeneği, tek bir frame için renk değiştirip hemen geri dönen küçük lekeleri
+önceki frame'e eşitler. Siluete ve büyük değişikliklere dokunmaz. Deneyseldir; ince parçaları
+kalın modellemek hâlâ en etkili önlemdir.
 
 ## Kod yapısı
 
@@ -57,6 +82,7 @@ Sonucun kalitesini en çok model belirler:
 - `src/palette.js`, `src/color.js` — OKLab uzayında palet çıkarma ve renk eşleme
 - `src/main.js` — arayüz
 - `unity/Editor/PixelSheetImporter.cs` — Unity içe aktarıcı
+- `unity/Shaders/PixelToonSpriteLit.shader` — normal map'ten kademeli dinamik ışık (URP 2D)
 
 ## Kaynak
 

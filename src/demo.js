@@ -39,7 +39,7 @@ export function createDemoCharacter() {
   blob(torso, CLOTH, 0.3, 0.26, 0.2, 0, 0.13, 0);
   box(torso, SCARF, 0.32, 0.07, 0.22, 0, 0.26, 0);
   const scarf = joint('scarf', torso, 0, 0.26, -0.11);
-  box(scarf, SCARF, 0.1, 0.07, 0.24, 0.05, 0, -0.12);
+  box(scarf, SCARF, 0.1, 0.07, 0.24, 0.05, 0, -0.12).name = 'Atkı ucu';
   const head = joint('head', torso, 0, 0.29, 0);
   blob(head, SKIN, 0.3, 0.26, 0.28, 0, 0.13, 0);
   box(head, DARK, 0.32, 0.1, 0.3, 0, 0.24, -0.005); // saç
@@ -52,8 +52,8 @@ export function createDemoCharacter() {
     blob(elbow, SKIN, 0.09, 0.13, 0.09, 0, -0.06, 0);
     blob(elbow, SKIN, 0.12, 0.11, 0.12, 0, -0.17, 0); // büyük el
     if (side === 'R') {
-      box(elbow, BOOT, 0.04, 0.04, 0.12, 0, -0.17, 0.05);
-      box(elbow, STEEL, 0.03, 0.07, 0.46, 0, -0.17, 0.33); // kılıç
+      box(elbow, BOOT, 0.04, 0.04, 0.12, 0, -0.17, 0.05).name = 'Kılıç kabzası';
+      box(elbow, STEEL, 0.03, 0.07, 0.46, 0, -0.17, 0.33).name = 'Kılıç';
     }
     const hip = joint('leg' + side, hips, sx * 0.08, -0.05, 0);
     blob(hip, DARK, 0.12, 0.2, 0.13, 0, -0.09, 0);
