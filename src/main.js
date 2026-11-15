@@ -296,7 +296,7 @@ stage.addEventListener('drop', (e) => {
   stage.classList.remove('drop');
   if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
 });
-stage.addEventListener('mousemove', (e) => {
+stage.addEventListener('pointermove', (e) => {
   const r = $('preview').getBoundingClientRect();
   const dx = e.clientX - (r.left + r.width / 2), dy = (r.top + r.height / 2) - e.clientY;
   state.mouseLight = { lightAngle: (Math.atan2(dy, dx) * 180) / Math.PI, lightHeight: 30 };

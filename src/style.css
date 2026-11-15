@@ -1,9 +1,10 @@
 :root {
   --bg: #14121a; --panel: #1e1b27; --line: #322d40; --text: #e6e1f0; --dim: #9a93ad; --accent: #e0a23c;
-  font: 13px/1.4 system-ui, sans-serif; color: var(--text);
+  font: 13px/1.4 system-ui, sans-serif; color: var(--text); color-scheme: dark;
 }
 * { box-sizing: border-box; }
-body { margin: 0; height: 100vh; display: flex; background: var(--bg); overflow: hidden; }
+html, body { height: 100%; }
+body { margin: 0; display: flex; background: var(--bg); color: var(--text); font: inherit; overflow: hidden; }
 
 #panel { width: 300px; flex: none; overflow-y: auto; background: var(--panel); border-right: 1px solid var(--line); padding: 12px; }
 h1 { font-size: 16px; margin: 0 0 8px; color: var(--accent); }
@@ -51,3 +52,20 @@ figcaption { color: var(--dim); font-size: 11px; margin-bottom: 4px; }
 #sheets figure { flex: 1; min-width: 0; }
 #sheets canvas { max-width: 100%; height: auto; }
 [hidden] { display: none !important; }
+
+/* Telefon: önizleme üstte, ayarlar altında; sayfa dikey kayar */
+@media (max-width: 760px) {
+  html, body { height: auto; }
+  body { flex-direction: column; overflow: visible; }
+  main { order: -1; }
+  #stage { flex: none; height: auto; padding: 12px 0; }
+  #panel { width: auto; border-right: 0; border-top: 1px solid var(--line); overflow: visible;
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  #toolbar { flex-wrap: wrap; gap: 8px 12px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  #info { margin-left: 0; width: 100%; }
+  #sheets { flex-direction: column; max-height: none;
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  input[type=number], input[type=text], select, button { min-height: 36px; }
+  #stage canvas { max-width: 100%; height: auto; }
+}
