@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>3D → Pixel Art Sprite Aracı</title>
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <aside id="panel">
+    <h1>3D → Pixel Art</h1>
+
+    <section>
+      <h2>Model</h2>
+      <label class="file">
+        <input type="file" id="file" accept=".glb,.gltf,.fbx" />
+        <span>GLB / FBX yükle (ya da sürükle-bırak)</span>
+      </label>
+      <button id="demo" class="ghost">Demo karakteri yükle</button>
+      <p id="modelInfo" class="hint"></p>
+    </section>
+
+    <section>
+      <h2>Animasyonlar</h2>
+      <div id="clips"></div>
+      <p class="hint">Kutucuk: sheet'e dahil et. İsme tıkla: önizle.</p>
+    </section>
+
+    <section>
+      <h2>Render</h2>
+      <label>Karakter boyu (px) <input type="number" id="charHeight" min="8" max="256" value="50" /></label>
+      <label>Animasyon FPS <input type="number" id="fps" min="1" max="60" value="12" /></label>
+      <label>Kamera açısı <output></output><input type="range" id="yaw" min="-180" max="180" step="5" value="-90" /></label>
+      <label>Kamera eğimi <output></output><input type="range" id="pitch" min="-45" max="45" step="1" value="0" /></label>
+      <label class="check"><input type="checkbox" id="flatNormals" /> Düz (faceted) normaller</label>
+    </section>
+
+    <section>
+      <h2>Palet</h2>
+      <label>Kaynak
+        <select id="paletteMode">
+          <option value="auto">Otomatik (modelden çıkar)</option>
+          <option value="custom">Kendi paletim (hex listesi)</option>
+        </select>
+      </label>
+      <label id="colorCountRow">Renk sayısı <input type="number" id="colorCount" min="2" max="64" value="16" /></label>
+      <textarea id="customPalette" rows="3" placeholder="Lospec .hex içeriğini yapıştır: 1a1c2c 5d275d b13e53 ..." hidden></textarea>
+      <div id="swatches"></div>
+    </section>
+
+    <section>
+      <h2>Gölge</h2>
+      <label class="check"><input type="checkbox" id="bake" checked /> Gölgeyi sprite'a göm</label>
+      <p class="hint">Kapalıyken sprite düz renk çıkar; gölgeyi Unity normal map'ten hesaplar.</p>
+      <label>Ton kademesi <input type="number" id="steps" min="1" max="6" value="3" /></label>
+      <label>Işık yönü <output></output><input type="range" id="lightAngle" min="0" max="360" step="5" value="125" /></label>
+      <label>Işık önden <output></output><input type="range" id="lightHeight" min="0" max="90" step="5" value="35" /></label>
+      <label>Kontrast <output></output><input type="range" id="contrast" min="0" max="0.4" step="0.01" value="0.14" /></label>
+      <label>Ton kaydırma <output></output><input type="range" id="hueShift" min="0" max="0.6" step="0.02" value="0.2" /></label>
+    </section>
+
+    <section>
+      <h2>Çizgi</h2>
+      <label>Outline
+        <select id="outline">
+          <option value="outer">Dış (siluete +1 px)</option>
+          <option value="inner">İç (kenar piksellerini boya)</option>
+          <option value="none">Yok</option>
+        </select>
+      </label>
+      <label>Outline rengi <input type="color" id="outlineColor" value="#1a1423" /></label>
+      <label class="check"><input type="checkbox" id="outlineColored" /> Renkli outline (komşu rengin koyusu)</label>
+      <label class="check"><input type="checkbox" id="innerLines" checked /> İç çizgiler (derinlik farkı)</label>
+      <label>İç çizgi eşiği <output></output><input type="range" id="innerThreshold" min="1" max="30" step="1" value="8" /></label>
+    </section>
+
+    <section>
+      <h2>Temizlik</h2>
+      <label class="check"><input type="checkbox" id="cleanSilhouette" checked /> Yetim pikselleri sil / delikleri kapat</label>
+      <label class="check"><input type="checkbox" id="cleanColors" /> Tek piksellik renk lekelerini sil</label>
+      <p class="hint">İkincisi 1 px'lik göz gibi detayları da silebilir.</p>
+    </section>
+
+    <section>
+      <h2>Dışa aktar</h2>
+      <label>İsim <input type="text" id="name" value="character" /></label>
+      <label>Sütun sayısı <input type="number" id="columns" min="1" max="64" value="8" /></label>
+      <label>Unity Pixels Per Unit <input type="number" id="unityPPU" min="1" max="512" value="32" /></label>
+      <button id="export">Sheet + Normal + JSON indir</button>
+    </section>
+  </aside>
+
+  <main>
+    <div id="toolbar">
+      <label>Görünüm
+        <select id="view">
+          <option value="color">Renk (export edilecek)</option>
+          <option value="normal">Normal map</option>
+          <option value="light">Işık simülasyonu (fareyi gezdir)</option>
+        </select>
+      </label>
+      <label>Zoom <input type="range" id="zoom" min="1" max="16" step="1" value="8" /></label>
+      <button id="play" class="ghost">Duraklat</button>
+      <span id="info"></span>
+    </div>
+    <div id="stage"><canvas id="preview"></canvas></div>
+    <div id="sheets">
+      <figure><figcaption>Renk sheet</figcaption><canvas id="sheetColor"></canvas></figure>
+      <figure><figcaption>Normal sheet</figcaption><canvas id="sheetNormal"></canvas></figure>
+    </div>
+  </main>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
