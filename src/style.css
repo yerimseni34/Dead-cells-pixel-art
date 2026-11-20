@@ -71,3 +71,4 @@ figcaption { color: var(--dim); font-size: 11px; margin-bottom: 4px; }
 }
 #clips .clip .loop { margin: 0; gap: 2px; color: var(--dim); flex-wrap: nowrap; }
 #parts { max-height: 180px; overflow-y: auto; }
+button:disabled { opacity: .6; cursor: progress; }

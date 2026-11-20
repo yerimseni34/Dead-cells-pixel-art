@@ -27,6 +27,8 @@ export class Capturer {
     this.clips = [];
     this.meshes = [];
     this.layout = null;
+    this.rootLock = true;
+    this._locked = new Map();
   }
 
   setModel(root, clips) {
@@ -35,6 +37,7 @@ export class Capturer {
     this.clips = clips || [];
     this.scene.add(root);
     this.mixer = new THREE.AnimationMixer(root);
+    this._locked = new Map();
     this.meshes = [];
     const basicCache = new Map();
     const toBasic = (m) => {
@@ -67,10 +70,53 @@ export class Capturer {
     return Array.from({ length: count }, (_, i) => (i * clip.duration) / count);
   }
 
+  /**
+   * Kök hareketini kilitler: animasyon karakteri ileri taşıyorsa (koşu, yuvarlanma) o yatay
+   * kayma çıkarılır, karakter yerinde oynar. 2D oyunda hareketi oyun kodu yapar; sprite
+   * yerinde durmazsa hücre devasa olur ve karakter hücrenin bir kenarına kayar.
+   * Kalçanın sallanması ve dikey hareket (zıplama) korunur, yalnızca baştan sona kayma silinir.
+   */
+  _lockedClip(clip) {
+    if (this._locked.has(clip)) return this._locked.get(clip);
+    let result = clip;
+    // En üstteki (köke en yakın) konum izi = kök hareketi
+    let best = null, bestDepth = Infinity;
+    for (const track of clip.tracks) {
+      const parsed = THREE.PropertyBinding.parseTrackName(track.name);
+      if (parsed.propertyName !== 'position') continue;
+      const node = THREE.PropertyBinding.findNode(this.root, parsed.nodeName);
+      if (!node || !node.parent) continue;
+      let depth = 0;
+      for (let n = node; n && n !== this.root; n = n.parent) depth++;
+      if (depth < bestDepth) { bestDepth = depth; best = { track, node }; }
+    }
+    if (best && clip.duration > 0) {
+      const interp = best.track.createInterpolant();
+      const p0 = new THREE.Vector3().fromArray(interp.evaluate(0));
+      const p1 = new THREE.Vector3().fromArray(interp.evaluate(clip.duration));
+      this.root.updateMatrixWorld(true);
+      const parentM = new THREE.Matrix3().setFromMatrix4(best.node.parent.matrixWorld);
+      const world = p1.clone().sub(p0).applyMatrix3(parentM);
+      world.y = 0; // dikey hareket kalsın
+      const local = world.applyMatrix3(parentM.clone().invert());
+      if (local.lengthSq() > 1e-12) {
+        const track = best.track.clone();
+        const v = track.values;
+        for (let k = 0; k < track.times.length; k++) {
+          const f = track.times[k] / clip.duration;
+          v[k * 3] -= local.x * f; v[k * 3 + 1] -= local.y * f; v[k * 3 + 2] -= local.z * f;
+        }
+        result = new THREE.AnimationClip(clip.name, clip.duration, clip.tracks.map((t) => (t === best.track ? track : t)));
+      }
+    }
+    this._locked.set(clip, result);
+    return result;
+  }
+
   pose(clip, time) {
     this.mixer.stopAllAction();
     if (clip) {
-      const action = this.mixer.clipAction(clip);
+      const action = this.mixer.clipAction(this.rootLock ? this._lockedClip(clip) : clip);
       action.reset().play();
       this.mixer.setTime(time);
     }
@@ -93,7 +139,7 @@ export class Capturer {
     for (const mesh of this.meshes) {
       if (!mesh.visible) continue;
       const pos = mesh.geometry.attributes.position;
-      const stride = Math.max(1, Math.floor(pos.count / 4000));
+      const stride = Math.max(1, Math.floor(pos.count / 1500));
       for (let i = 0; i < pos.count; i += stride) {
         mesh.getVertexPosition(i, v);
         v.applyMatrix4(mesh.matrixWorld).applyMatrix4(view);
@@ -103,22 +149,17 @@ export class Capturer {
   }
 
   /**
-   * Hücre boyutunu ve kamerayı hesaplar. Seçili bütün kliplerin bütün frame'lerini
-   * kapsayan TEK bir hücre boyutu kullanılır; model orijini (ayak) her frame'de aynı
-   * piksele düşer, böylece sprite oyunda zıplamaz.
+   * Seçili kliplerin bütün frame'lerini kapsayan kutuyu ölçer (kamera uzayında, kamera orijinden
+   * 1 birim uzakta). Render yapmaz, sadece köşe noktalarını hesaplar; karakter boyu değişince
+   * yeniden ölçmeye gerek yoktur.
    */
-  computeLayout({ clips, fps, charHeight, yaw, pitch, padding }) {
+  measureBounds({ clips, fps, yaw, pitch }) {
     this._placeCamera(yaw, pitch);
-    this.camera.updateMatrixWorld(true);
-
     const list = clips.length ? clips : [null];
-    // Referans boy: ilk klibin ilk karesi
+    // Referans: ilk klibin ilk karesi (boy ve ortalama bunun üzerinden)
     this.pose(list[0], 0);
     const ref = new THREE.Box3();
     this._expandBounds(ref);
-    const refHeight = Math.max(1e-6, ref.max.y - ref.min.y);
-    const ppu = charHeight / refHeight; // dünya birimi başına piksel
-
     const box = new THREE.Box3();
     for (const clip of list) {
       for (const t of this.sampleTimes(clip, fps)) {
@@ -126,10 +167,27 @@ export class Capturer {
         this._expandBounds(box);
       }
     }
-    const left = Math.ceil(-box.min.x * ppu) + padding;
-    const right = Math.ceil(box.max.x * ppu) + padding;
-    const down = Math.ceil(-box.min.y * ppu) + padding;
-    const up = Math.ceil(box.max.y * ppu) + padding;
+    return { ref, box, yaw, pitch };
+  }
+
+  /**
+   * Hücre boyutunu ve kamerayı ayarlar. Bütün frame'ler TEK bir hücre boyutunu paylaşır ve
+   * çapa noktası (ayak) her frame'de aynı piksele düşer; böylece sprite oyunda zıplamaz.
+   * center=true: çapa, ilk karedeki karakterin yatay ortası ve en alt noktası
+   *              (model orijini ayakta değilse ya da karakter orijinden kaymışsa).
+   * center=false: çapa, modelin orijini.
+   */
+  applyLayout({ ref, box, yaw, pitch }, { charHeight, padding, center }) {
+    this._placeCamera(yaw, pitch);
+    const refHeight = Math.max(1e-6, ref.max.y - ref.min.y);
+    const ppu = charHeight / refHeight; // dünya birimi başına piksel
+    const ax = center ? (ref.min.x + ref.max.x) / 2 : 0;
+    const ay = center ? ref.min.y : 0;
+
+    const left = Math.max(0, Math.ceil((ax - box.min.x) * ppu)) + padding;
+    const right = Math.max(0, Math.ceil((box.max.x - ax) * ppu)) + padding;
+    const down = Math.max(0, Math.ceil((ay - box.min.y) * ppu)) + padding;
+    const up = Math.max(0, Math.ceil((box.max.y - ay) * ppu)) + padding;
     const w = Math.max(2, left + right), h = Math.max(2, down + up);
 
     // Ölçüm sırasında kamera orijinden 1 birim uzaktaydı: z_view = (bakış ekseni üzerindeki konum) - 1
@@ -137,10 +195,10 @@ export class Capturer {
     const depthPad = (zNear - zFar) * 0.05 + 1e-3;
     const dist = zNear + depthPad + 1; // kamera modelin tamamen dışında
     this.camera.position.setLength(dist);
-    this.camera.left = -left / ppu;
-    this.camera.right = right / ppu;
-    this.camera.bottom = -down / ppu;
-    this.camera.top = up / ppu;
+    this.camera.left = ax - left / ppu;
+    this.camera.right = ax + right / ppu;
+    this.camera.bottom = ay - down / ppu;
+    this.camera.top = ay + up / ppu;
     this.camera.near = 1;
     this.camera.far = dist - zFar + depthPad;
     this.camera.updateProjectionMatrix();
@@ -153,6 +211,17 @@ export class Capturer {
       depthRange: this.camera.far - this.camera.near,
     };
     return this.layout;
+  }
+
+  /** Sadece düz renk geçişi (palet çıkarmak için). */
+  captureAlbedo(clip, time) {
+    this.pose(clip, time);
+    const originals = this.meshes.map((m) => m.material);
+    this.meshes.forEach((m) => { m.material = m.userData.basic; });
+    this.renderer.render(this.scene, this.camera);
+    this.meshes.forEach((m, i) => { m.material = originals[i]; });
+    const { w, h } = this.layout;
+    return { w, h, albedo: this._read() };
   }
 
   _read() {

@@ -11,19 +11,24 @@ const PADDING = 2; // outline için hücre kenarında boşluk
 
 const capturer = new Capturer();
 const state = {
-  clipStates: [],   // {clip, include}
+  clipStates: [],   // {clip, include, loop}
   current: 0,       // önizlenen klip (clipStates indeksi)
-  raw: [],          // [{clip, name, frames:[raw]}]  yalnızca dahil edilen klipler
-  final: [],        // raw ile aynı yapı, işlenmiş frame'ler
+  bounds: null,     // ölçülmüş kutu (pahalı; yalnızca açı/fps/klip/parça değişince yeniden)
+  boundsKey: '',
+  layout: null,
+  paletteSamples: [],
   palette: [],
   ctx: null,
-  layout: null,
+  // Önbellekler: yalnızca ihtiyaç duyulan klip hesaplanır.
+  raw: new Map(),   // clip -> ham frame'ler (render ayarı değişince silinir)
+  proc: new Map(),  // clip -> işlenmiş frame'ler (herhangi bir ayar değişince silinir)
   playing: true,
   mouseLight: null,
+  frame: 0,
 };
 
 // ---------- ayarlar ----------
-const CAPTURE_IDS = ['charHeight', 'fps', 'yaw', 'pitch', 'flatNormals'];
+const CAPTURE_IDS = ['charHeight', 'fps', 'yaw', 'pitch', 'flatNormals', 'rootLock', 'centerChar'];
 const PROCESS_IDS = ['paletteMode', 'colorCount', 'customPalette', 'bake', 'steps', 'lightAngle', 'lightHeight',
   'contrast', 'hueShift', 'outline', 'outlineColor', 'outlineColored', 'innerLines', 'innerThreshold',
   'cleanSilhouette', 'cleanColors', 'deflicker', 'columns'];
@@ -52,45 +57,85 @@ function processOptions() {
 }
 
 // ---------- boru hattı ----------
-function recapture() {
-  if (!capturer.root) return;
+const POSE = { clip: null, include: true, loop: true };
+
+/** Export'a girecek klipler (hiçbiri seçili değilse tek poz). */
+function exportStates() {
   const included = state.clipStates.filter((c) => c.include);
-  const clips = included.map((c) => c.clip);
+  return included.length ? included : [POSE];
+}
+function previewState() { return state.clipStates[state.current] ?? POSE; }
+const clipName = (cs) => (cs.clip ? cs.clip.name : 'pose');
+
+/** Render ayarı (boy, açı, fps, klip seçimi, parçalar...) değişince. */
+function relayout() {
+  if (!capturer.root) return;
+  capturer.rootLock = on('rootLock');
+  const clips = exportStates().map((c) => c.clip).filter(Boolean);
   const fps = num('fps');
-  state.layout = capturer.computeLayout({
-    clips, fps, charHeight: num('charHeight'), yaw: num('yaw'), pitch: num('pitch'), padding: PADDING,
+  const key = JSON.stringify([num('yaw'), num('pitch'), fps, on('rootLock'),
+    clips.map((c) => capturer.clips.indexOf(c)), capturer.meshes.map((m) => m.visible)]);
+  if (key !== state.boundsKey) {
+    state.bounds = capturer.measureBounds({ clips, fps, yaw: num('yaw'), pitch: num('pitch') });
+    state.boundsKey = key;
+  }
+  state.layout = capturer.applyLayout(state.bounds, {
+    charHeight: num('charHeight'), padding: PADDING, center: on('centerChar'),
   });
-  const list = clips.length ? clips : [null];
-  state.raw = list.map((clip) => ({
-    clip,
-    loop: included.find((c) => c.clip === clip)?.loop ?? true,
-    name: clip ? clip.name : 'pose',
-    frames: capturer.sampleTimes(clip, fps).map((t) => capturer.captureFrame(clip, t, on('flatNormals'))),
-  }));
+
+  // Palet bütün animasyonlar için ortak olmalı; ama hepsini render etmek yerine
+  // her klipten birkaç örnek kare yeterli.
+  const states = exportStates();
+  const perClip = Math.max(4, Math.ceil(60 / states.length));
+  state.paletteSamples = [];
+  for (const cs of states) {
+    const times = capturer.sampleTimes(cs.clip, fps);
+    const n = Math.min(perClip, times.length);
+    for (let k = 0; k < n; k++) {
+      state.paletteSamples.push(capturer.captureAlbedo(cs.clip, times[Math.floor((k * times.length) / n)]));
+    }
+  }
+  state.raw.clear();
   reprocess();
 }
 
+/** İşleme ayarı (palet, gölge, outline...) değişince: sadece seçili klip yeniden hesaplanır. */
 function reprocess() {
-  if (!state.raw.length) return;
-  const allRaw = state.raw.flatMap((c) => c.frames);
+  if (!state.layout) return;
   const custom = $('paletteMode').value === 'custom' ? parsePalette($('customPalette').value) : [];
   const locked = custom.length >= 2;
-  state.palette = locked ? custom : quantizeHistogram(buildHistogram(allRaw), num('colorCount'));
+  state.palette = locked ? custom : quantizeHistogram(buildHistogram(state.paletteSamples), num('colorCount'));
   const match = makeMatcher(state.palette);
   // Kendi paletin varsa gölge tonları da o paletin içinden seçilir.
   state.ctx = { palette: state.palette, match, finalMatch: locked ? match : null };
-
-  const opts = processOptions();
-  state.final = state.raw.map((c) => {
-    const frames = c.frames.map((f) => processFrame(f, opts, state.ctx));
-    return { ...c, frames: on('deflicker') ? reduceFlicker(frames, c.loop) : frames };
-  });
+  state.proc.clear();
   drawSwatches();
-  drawSheets();
-  updateInfo();
+  refreshPreview();
 }
 
-function allFinalFrames() { return state.final.flatMap((c) => c.frames); }
+function ensureRaw(cs) {
+  if (!state.raw.has(cs.clip)) {
+    const flat = on('flatNormals');
+    state.raw.set(cs.clip, capturer.sampleTimes(cs.clip, num('fps')).map((t) => capturer.captureFrame(cs.clip, t, flat)));
+  }
+  return state.raw.get(cs.clip);
+}
+
+function ensureProc(cs) {
+  if (!state.proc.has(cs.clip)) {
+    const opts = processOptions();
+    const frames = ensureRaw(cs).map((f) => processFrame(f, opts, state.ctx));
+    state.proc.set(cs.clip, on('deflicker') ? reduceFlicker(frames, cs.loop) : frames);
+  }
+  return state.proc.get(cs.clip);
+}
+
+function refreshPreview() {
+  if (!state.layout) return;
+  const frames = ensureProc(previewState());
+  drawSheets(frames);
+  updateInfo(frames);
+}
 
 // ---------- çizim ----------
 function putPixels(canvas, data, w, h, scale = 1) {
@@ -103,8 +148,7 @@ function putPixels(canvas, data, w, h, scale = 1) {
   g.drawImage(tmp, 0, 0, w * scale, h * scale);
 }
 
-function drawSheets() {
-  const frames = allFinalFrames();
+function drawSheets(frames) {
   const cols = num('columns');
   for (const [id, key] of [['sheetColor', 'color'], ['sheetNormal', 'normal']]) {
     const s = packSheet(frames, key, cols);
@@ -121,36 +165,33 @@ function drawSwatches() {
   }));
 }
 
-function updateInfo() {
-  const L = state.layout;
-  const n = allFinalFrames().length;
-  const colors = new Set();
-  for (const f of allFinalFrames()) {
-    for (let i = 0; i < f.color.length; i += 4) if (f.color[i + 3]) colors.add((f.color[i] << 16) | (f.color[i + 1] << 8) | f.color[i + 2]);
-  }
-  $('info').textContent = `Hücre ${L.w}×${L.h} px · ${n} frame · ${colors.size} renk`;
+function totalExportFrames() {
+  const fps = num('fps');
+  return exportStates().reduce((n, cs) => n + capturer.sampleTimes(cs.clip, fps).length, 0);
 }
 
-function previewClipIndex() {
-  // state.current, clipStates indeksi; raw/final yalnızca dahil edilenleri içerir
-  const target = state.clipStates[state.current]?.clip ?? null;
-  const i = state.final.findIndex((c) => c.clip === target);
-  return i < 0 ? 0 : i;
+function updateInfo(frames) {
+  const L = state.layout;
+  const colors = new Set();
+  for (const f of frames) {
+    for (let i = 0; i < f.color.length; i += 4) if (f.color[i + 3]) colors.add((f.color[i] << 16) | (f.color[i + 1] << 8) | f.color[i + 2]);
+  }
+  $('info').textContent = `Hücre ${L.w}×${L.h} px · bu animasyon ${frames.length} frame, ${colors.size} renk · export: ${totalExportFrames()} frame`;
 }
 
 function tick(now) {
   requestAnimationFrame(tick);
-  if (!state.final.length) return;
-  const ci = previewClipIndex();
-  const clip = state.final[ci];
+  const cs = previewState();
+  const frames = state.proc.get(cs.clip);
+  if (!frames || !frames.length) return;
   const fps = num('fps');
-  if (state.playing) state.frame = Math.floor((now / 1000) * fps) % clip.frames.length;
-  const fi = Math.min(state.frame || 0, clip.frames.length - 1);
+  if (state.playing) state.frame = Math.floor((now / 1000) * fps) % frames.length;
+  const fi = Math.min(state.frame || 0, frames.length - 1);
   const view = $('view').value;
-  let f = clip.frames[fi];
+  let f = frames[fi];
   if (view === 'light' && state.mouseLight) {
     // Oyundaki dinamik ışığın taklidi: aynı ham veriyi fare yönünden gelen ışıkla yeniden gölgele
-    f = processFrame(state.raw[ci].frames[fi], { ...processOptions(), bake: true, steps: Math.max(2, num('steps')), ...state.mouseLight }, state.ctx);
+    f = processFrame(ensureRaw(cs)[fi], { ...processOptions(), bake: true, steps: Math.max(2, num('steps')), ...state.mouseLight }, state.ctx);
   }
   putPixels($('preview'), view === 'normal' ? f.normal : f.color, f.w, f.h, num('zoom'));
 }
@@ -163,9 +204,10 @@ function setModel(root, clips, label) {
   state.clipStates = clips.map((clip) => ({ clip, include: true, loop: !oneShot.test(clip.name || '') }));
   renderPartList();
   state.current = 0;
+  state.boundsKey = '';
   $('modelInfo').textContent = `${label} · ${clips.length} animasyon`;
   renderClipList();
-  recapture();
+  relayout();
 }
 
 function renderClipList() {
@@ -176,7 +218,7 @@ function renderClipList() {
     row.className = 'clip' + (i === state.current ? ' active' : '');
     const cb = document.createElement('input');
     cb.type = 'checkbox'; cb.checked = cs.include;
-    cb.onclick = (e) => { e.stopPropagation(); cs.include = cb.checked; recapture(); };
+    cb.onclick = (e) => { e.stopPropagation(); cs.include = cb.checked; schedule(relayout); };
     const name = document.createElement('span');
     name.textContent = cs.clip.name || `clip_${i}`;
     const dur = document.createElement('small');
@@ -186,11 +228,11 @@ function renderClipList() {
     loop.title = "Unity'de döngülü oynat";
     const loopCb = document.createElement('input');
     loopCb.type = 'checkbox'; loopCb.checked = cs.loop;
-    loopCb.onclick = (e) => { e.stopPropagation(); cs.loop = loopCb.checked; schedule(recapture); };
+    loopCb.onclick = (e) => { e.stopPropagation(); cs.loop = loopCb.checked; state.proc.delete(cs.clip); refreshPreview(); };
     loop.onclick = (e) => e.stopPropagation();
     loop.append(loopCb, '↻');
     row.append(cb, name, dur, loop);
-    row.onclick = () => { state.current = i; renderClipList(); };
+    row.onclick = () => { state.current = i; state.frame = 0; renderClipList(); refreshPreview(); };
     return row;
   }));
 }
@@ -209,7 +251,7 @@ function renderPartList() {
       // en az bir parça görünür kalmalı
       if (!cb.checked && meshes.filter((m) => m.visible).length === 1) { cb.checked = true; return; }
       mesh.visible = cb.checked;
-      schedule(recapture);
+      schedule(relayout);
     };
     row.append(cb, mesh.name || mesh.material?.name || `parça ${i + 1}`);
     return row;
@@ -243,9 +285,28 @@ function loadDemo() {
 }
 
 // ---------- dışa aktarma ----------
+const nextFrame = () => new Promise((r) => setTimeout(r, 0));
+
+/** Export'a girecek bütün klipleri hesaplar; arayüz donmasın diye klip klip ilerler. */
+async function prepareAll(onProgress) {
+  const states = exportStates();
+  for (let i = 0; i < states.length; i++) {
+    onProgress?.(i, states.length, clipName(states[i]));
+    await nextFrame();
+    ensureProc(states[i]);
+  }
+}
+
+/** prepareAll() sonrasında çağrılır. */
 function buildExport() {
   const L = state.layout;
-  const frames = allFinalFrames();
+  const states = exportStates();
+  const perClip = states.map((cs) => {
+    const frames = state.proc.get(cs.clip);
+    if (!frames) throw new Error(`'${clipName(cs)}' henüz hesaplanmadı`);
+    return { cs, frames };
+  });
+  const frames = perClip.flatMap((c) => c.frames);
   const cols = num('columns');
   const color = packSheet(frames, 'color', cols);
   const normal = packSheet(frames, 'normal', cols);
@@ -261,12 +322,12 @@ function buildExport() {
     columns: color.columns,
     rows: color.rows,
     frameCount: frames.length,
-    pivot: L.pivot, // hücrenin sol-alt köşesinden piksel; modelin orijini (ayak) buraya düşer
+    pivot: L.pivot, // hücrenin sol-alt köşesinden piksel; karakterin ayağı buraya düşer
     pixelsPerUnit: num('unityPPU'),
     shadingBaked: on('bake'),
-    clips: state.final.map((c) => {
-      const entry = { name: c.name, start, count: c.frames.length, fps: num('fps'), loop: c.loop };
-      start += c.frames.length;
+    clips: perClip.map(({ cs, frames: f }) => {
+      const entry = { name: clipName(cs), start, count: f.length, fps: num('fps'), loop: cs.loop };
+      start += f.length;
       return entry;
     }),
   };
@@ -288,7 +349,25 @@ function sheetBlob(sheet) {
 }
 
 async function exportAll() {
-  const ex = buildExport();
+  const btn = $('export');
+  const label = btn.textContent;
+  btn.disabled = true;
+  $('exportStatus').textContent = '';
+  try {
+    await prepareAll((i, n, clip) => { btn.textContent = `Hazırlanıyor ${i + 1}/${n}: ${clip}`; });
+    btn.textContent = 'Paketleniyor…';
+    await nextFrame();
+    await saveExport(buildExport());
+  } catch (err) {
+    console.error(err);
+    $('exportStatus').textContent = `Export başarısız: ${err.message}`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
+  }
+}
+
+async function saveExport(ex) {
   download(await sheetBlob(ex.color), ex.meta.colorTexture);
   download(await sheetBlob(ex.normal), ex.meta.normalTexture);
   download(new Blob([JSON.stringify(ex.meta, null, 2)], { type: 'application/json' }), `${ex.name}.json`);
@@ -297,8 +376,8 @@ async function exportAll() {
 // ---------- olaylar ----------
 let pending = null;
 function schedule(fn) {
-  // recapture, reprocess'i de kapsar; ikisi birden istenirse recapture kazanır
-  if (pending === recapture && fn === reprocess) return;
+  // relayout, reprocess'i de kapsar; ikisi birden istenirse relayout kazanır
+  if (pending === relayout && fn === reprocess) return;
   pending = fn;
   requestAnimationFrame(() => { if (pending) { const f = pending; pending = null; f(); } });
 }
@@ -313,7 +392,7 @@ function syncOutputs() {
   $('colorCountRow').hidden = custom;
 }
 
-for (const id of CAPTURE_IDS) $(id).addEventListener('input', () => { syncOutputs(); schedule(recapture); });
+for (const id of CAPTURE_IDS) $(id).addEventListener('input', () => { syncOutputs(); schedule(relayout); });
 for (const id of PROCESS_IDS) $(id).addEventListener('input', () => { syncOutputs(); schedule(reprocess); });
 $('zoom').addEventListener('input', syncOutputs);
 $('file').addEventListener('change', (e) => e.target.files[0] && loadFile(e.target.files[0]));
@@ -343,4 +422,4 @@ loadDemo();
 requestAnimationFrame(tick);
 
 // Test ve konsoldan kurcalama için
-window.__app = { state, capturer, recapture, reprocess, buildExport, loadFile };
+window.__app = { state, capturer, setModel, relayout, reprocess, prepareAll, buildExport, loadFile };

@@ -39,6 +39,9 @@
       <label>Kamera açısı <output></output><input type="range" id="yaw" min="-180" max="180" step="5" value="-90" /></label>
       <label>Kamera eğimi <output></output><input type="range" id="pitch" min="-45" max="45" step="1" value="0" /></label>
       <label class="check"><input type="checkbox" id="flatNormals" /> Düz (faceted) normaller</label>
+      <label class="check"><input type="checkbox" id="rootLock" checked /> Kök hareketini kilitle (yerinde koş)</label>
+      <label class="check"><input type="checkbox" id="centerChar" checked /> Karakteri ortala</label>
+      <p class="hint">Animasyon karakteri ileri taşıyorsa ya da model orijinden kaymışsa karakter hücrenin kenarına düşer; bu ikisi onu düzeltir.</p>
     </section>
 
     <section>
@@ -95,6 +98,8 @@
       <label>Sütun sayısı <input type="number" id="columns" min="1" max="64" value="8" /></label>
       <label>Unity Pixels Per Unit <input type="number" id="unityPPU" min="1" max="512" value="32" /></label>
       <button id="export">Sheet + Normal + JSON indir</button>
+      <p class="hint">Önizlemede yalnızca seçili animasyon hesaplanır; bütün animasyonlar export sırasında hesaplanır.</p>
+      <p id="exportStatus" class="hint"></p>
     </section>
   </aside>
 
@@ -113,8 +118,8 @@
     </div>
     <div id="stage"><canvas id="preview"></canvas></div>
     <div id="sheets">
-      <figure><figcaption>Renk sheet</figcaption><canvas id="sheetColor"></canvas></figure>
-      <figure><figcaption>Normal sheet</figcaption><canvas id="sheetNormal"></canvas></figure>
+      <figure><figcaption>Renk (seçili animasyon)</figcaption><canvas id="sheetColor"></canvas></figure>
+      <figure><figcaption>Normal (seçili animasyon)</figcaption><canvas id="sheetNormal"></canvas></figure>
     </div>
   </main>
   <script type="module" src="/src/main.js"></script>

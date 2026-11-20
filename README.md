@@ -41,6 +41,22 @@ npm run build:single   # Pixel-Sprite-Araci.html dosyasını yeniden üretir
 | Düşük FPS | Animasyon 12 fps'te örneklenir; ara değer üretilmez. |
 | Sabit hücre ve pivot | Bütün frame'ler aynı hücre boyutunda, ayak noktası hep aynı pikselde. |
 
+## Çok animasyonlu modeller
+
+Önizlemede sadece **seçili animasyon** hesaplanır; ayar değiştirince yalnızca o yeniden çizilir.
+Bütün animasyonlar **export'a basınca** sırayla hesaplanır (butonda ilerleme görünür).
+Palet ve hücre boyutu yine bütün seçili animasyonlara göre ortak belirlenir, yani önizlemede gördüğün export'la aynıdır.
+
+## Karakter hücrenin ortasında değilse
+
+- **Kök hareketini kilitle:** Animasyon karakteri ileri taşıyorsa (Mixamo'da "In Place" seçilmemiş koşu gibi)
+  bu yatay kayma silinir, karakter yerinde oynar. Kalça sallanması ve zıplama korunur.
+- **Karakteri ortala:** Hücreyi modelin orijinine göre değil, ilk animasyonun ilk karesindeki karakterin
+  ortasına ve ayak hizasına göre kurar. Model sahnede orijinden kaymışsa bunu düzeltir.
+
+Hücre yine de geniş görünüyorsa sebebi büyük bir hareket (uzun kılıç savurma gibi) olabilir: hücre, bütün
+animasyonlara sığacak şekilde ayarlanır. O animasyonu ayrı bir export'a almak hücreyi küçültür.
+
 ## Model hazırlarken
 
 Sonucun kalitesini en çok model belirler:
