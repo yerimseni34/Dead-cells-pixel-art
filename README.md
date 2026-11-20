@@ -8,10 +8,16 @@ Dead Cells'in üretim yöntemini temel alır: karakteri piksel piksel çizmek ye
 
 ## Çalıştırma
 
+**Kurulumsuz (en kolay):** `Pixel-Sprite-Araci.html` dosyasını indir, çift tıkla. Chrome, Edge ya da Firefox'ta açılır;
+model yükleme ve indirme dahil her şey çalışır, internet gerekmez.
+
+**Geliştirme için** ([Node.js](https://nodejs.org) gerekir):
+
 ```bash
 npm install
-npm run dev      # http://localhost:5173
-npm test         # piksel işleme testleri
+npm run dev            # http://localhost:5173
+npm test               # piksel işleme testleri
+npm run build:single   # Pixel-Sprite-Araci.html dosyasını yeniden üretir
 ```
 
 ## Kullanım

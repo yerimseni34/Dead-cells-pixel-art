@@ -6,7 +6,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test"
+    "test": "node --test",
+    "build:single": "node scripts/build-single.mjs"
   },
   "repository": {
     "type": "git",
